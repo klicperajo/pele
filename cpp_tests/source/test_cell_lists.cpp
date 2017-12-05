@@ -1300,8 +1300,10 @@ TEST_F(SoACellListsTest, HSWCAEnergyLeesEdwards_Works) {
         pele::HS_WCALeesEdwardsCellLists<2> pot(eps, sca, radii, boxvec, shear, 1.0);
         for(size_t new_coords = 0; new_coords < 10; new_coords++) {
             create_coords();
-            const double e_aos = pot.get_energy(x_aos, false);
-            const double e_soa = pot.get_energy(x_soa, true);
+            pot.set_soa(false);
+            const double e_aos = pot.get_energy(x_aos);
+            pot.set_soa(true);
+            const double e_soa = pot.get_energy(x_soa);
             EXPECT_TRUE(almostEqual(e_aos, e_soa, 8));
         }
     }
@@ -1312,12 +1314,14 @@ TEST_F(SoACellListsTest, HSWCAEnergyGradientLeesEdwards_Works) {
         pele::HS_WCALeesEdwardsCellLists<2> pot(eps, sca, radii, boxvec, shear, 1.0);
         for(size_t new_coords = 0; new_coords < 10; new_coords++) {
             create_coords();
-            const double e_aos = pot.get_energy(x_aos, false);
-            const double e_soa = pot.get_energy(x_soa, true);
             pele::Array<double> g_aos(x_aos.size());
             pele::Array<double> g_soa(x_soa.size());
-            const double eg_aos = pot.get_energy_gradient(x_aos, g_aos, false);
-            const double eg_soa = pot.get_energy_gradient(x_soa, g_soa, true);
+            pot.set_soa(false);
+            const double e_aos = pot.get_energy(x_aos);
+            const double eg_aos = pot.get_energy_gradient(x_aos, g_aos);
+            pot.set_soa(true);
+            const double e_soa = pot.get_energy(x_soa);
+            const double eg_soa = pot.get_energy_gradient(x_soa, g_soa);
             EXPECT_TRUE(almostEqual(e_aos, e_soa, 8));
             EXPECT_TRUE(almostEqual(e_soa, eg_soa, 8));
             EXPECT_TRUE(almostEqual(eg_aos, eg_soa, 8));
@@ -1335,14 +1339,16 @@ TEST_F(SoACellListsTest, HSWCAEnergyGradientHessianLeesEdwards_Works) {
         pele::HS_WCALeesEdwardsCellLists<2> pot(eps, sca, radii, boxvec, shear, 1.0);
         for(size_t new_coords = 0; new_coords < 10; new_coords++) {
             create_coords();
-            const double e_aos = pot.get_energy(x_aos, false);
-            const double e_soa = pot.get_energy(x_soa, true);
             pele::Array<double> g_aos(x_aos.size());
             pele::Array<double> g_soa(x_soa.size());
             pele::Array<double> h_aos(x_aos.size() * x_aos.size());
             pele::Array<double> h_soa(h_aos.size());
-            const double egh_aos = pot.get_energy_gradient_hessian(x_aos, g_aos, h_aos, false);
-            const double egh_soa = pot.get_energy_gradient_hessian(x_soa, g_soa, h_soa, true);
+            pot.set_soa(false);
+            const double e_aos = pot.get_energy(x_aos);
+            const double egh_aos = pot.get_energy_gradient_hessian(x_aos, g_aos, h_aos);
+            pot.set_soa(true);
+            const double e_soa = pot.get_energy(x_soa);
+            const double egh_soa = pot.get_energy_gradient_hessian(x_soa, g_soa, h_soa);
             EXPECT_TRUE(almostEqual(e_aos, e_soa, 8));
             EXPECT_TRUE(almostEqual(e_soa, egh_soa, 8));
             EXPECT_TRUE(almostEqual(egh_aos, egh_soa, 8));

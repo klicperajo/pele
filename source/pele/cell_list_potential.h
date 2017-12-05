@@ -533,12 +533,17 @@ public:
 
     virtual size_t get_ndim(){return m_ndim;}
 
+    virtual inline void set_soa(const bool soa)
+    {
+        m_soa = soa;
+        m_cell_lists.set_soa(soa);
+    }
     virtual inline void get_rij(double * const r_ij, double const * const r1, double const * const r2) const
     {
         return m_dist->get_rij(r_ij, r1, r2);
     }
 
-    virtual double get_energy(Array<double> const & coords, const bool soa=false)
+    virtual double get_energy(Array<double> const & coords)
     {
         const size_t natoms = coords.size() / m_ndim;
         if (m_ndim * natoms != coords.size()) {
@@ -549,16 +554,16 @@ public:
             return NAN;
         }
 
-        update_iterator(coords, soa);
-        m_eAcc.reset_data(&coords, soa);
-        auto looper = m_cell_lists.get_atom_pair_looper(m_eAcc, soa);
+        update_iterator(coords);
+        m_eAcc.reset_data(&coords, m_soa);
+        auto looper = m_cell_lists.get_atom_pair_looper(m_eAcc);
 
         looper.loop_through_atom_pairs();
 
         return m_eAcc.get_energy();
     }
 
-    virtual double get_energy_gradient(Array<double> const & coords, Array<double> & grad, const bool soa=false)
+    virtual double get_energy_gradient(Array<double> const & coords, Array<double> & grad)
     {
         const size_t natoms = coords.size() / m_ndim;
         if (m_ndim * natoms != coords.size()) {
@@ -573,10 +578,10 @@ public:
             return NAN;
         }
 
-        update_iterator(coords, soa);
+        update_iterator(coords);
         grad.assign(0.);
-        m_egAcc.reset_data(&coords, &grad, soa);
-        auto looper = m_cell_lists.get_atom_pair_looper(m_egAcc, soa);
+        m_egAcc.reset_data(&coords, &grad, m_soa);
+        auto looper = m_cell_lists.get_atom_pair_looper(m_egAcc);
 
         looper.loop_through_atom_pairs();
 
@@ -584,7 +589,7 @@ public:
     }
 
     virtual double get_energy_gradient_hessian(Array<double> const & coords,
-            Array<double> & grad, Array<double> & hess, const bool soa=false)
+            Array<double> & grad, Array<double> & hess)
     {
         const size_t natoms = coords.size() / m_ndim;
         if (m_ndim * natoms != coords.size()) {
@@ -603,11 +608,11 @@ public:
             return NAN;
         }
 
-        update_iterator(coords, soa);
+        update_iterator(coords);
         grad.assign(0.);
         hess.assign(0.);
-        m_eghAcc.reset_data(&coords, &grad, &hess, soa);
-        auto looper = m_cell_lists.get_atom_pair_looper(m_eghAcc, soa);
+        m_eghAcc.reset_data(&coords, &grad, &hess, m_soa);
+        auto looper = m_cell_lists.get_atom_pair_looper(m_eghAcc);
 
         looper.loop_through_atom_pairs();
 
@@ -641,12 +646,15 @@ public:
             throw std::runtime_error("Can't calculate neighbors, because the "
                                      "used interaction doesn't use radii. ");
         }
+        if (m_soa) {
+            throw std::runtime_error("Can't calculate neighbors with structure of arrays (SoA)");
+        }
 
         if (!std::isfinite(coords[0]) || !std::isfinite(coords[coords.size() - 1])) {
             return;
         }
 
-        update_iterator(coords, false);
+        update_iterator(coords);
         NeighborAccumulator<pairwise_interaction, distance_policy> accumulator(
             m_interaction, m_dist, coords, m_radii, (1 + m_radii_sca) * cutoff_factor, include_atoms);
         auto looper = m_cell_lists.get_atom_pair_looper(accumulator);
@@ -664,15 +672,18 @@ public:
             throw std::runtime_error("coords.size() is not divisible by the number of dimensions");
         }
         if (m_radii.size() == 0) {
-            throw std::runtime_error("Can't calculate neighbors, because the "
-                                     "used interaction doesn't use radii. ");
+            throw std::runtime_error("Can't calculate overlaps, because the "
+                                     "used interaction doesn't use radii.");
+        }
+        if (m_soa) {
+            throw std::runtime_error("Can't calculate overlaps with structure of arrays (SoA)");
         }
 
         if (!std::isfinite(coords[0]) || !std::isfinite(coords[coords.size() - 1])) {
             return std::vector<size_t>(2, 0);
         }
 
-        update_iterator(coords, false);
+        update_iterator(coords);
         OverlapAccumulator<pairwise_interaction, distance_policy> accumulator(
             m_interaction, m_dist, coords, m_radii);
         auto looper = m_cell_lists.get_atom_pair_looper(accumulator);
@@ -688,12 +699,15 @@ public:
         if (m_ndim * natoms != coords.size()) {
             throw std::runtime_error("coords.size() is not divisible by the number of dimensions");
         }
+        if (m_soa) {
+            throw std::runtime_error("Can't calculate atom order with structure of arrays (SoA)");
+        }
 
         if (!std::isfinite(coords[0]) || !std::isfinite(coords[coords.size() - 1])) {
             return pele::Array<size_t>(0);
         }
 
-        update_iterator(coords, false);
+        update_iterator(coords);
         return m_cell_lists.get_order(natoms);
     }
 
@@ -714,10 +728,10 @@ public:
     }
 
     // Compute the maximum of all single atom norms
-    virtual inline double compute_norm(pele::Array<double> const & x, const bool soa=false) {
+    virtual inline double compute_norm(pele::Array<double> const & x) {
         const size_t natoms = x.size() / m_ndim;
         double max_x = 0;
-        if (soa)
+        if (m_soa)
         {
             #pragma simd reduction(max : max_x)
             for (size_t atom_i = 0;  atom_i < natoms; ++atom_i) {
@@ -745,9 +759,9 @@ public:
     }
 
 protected:
-    void update_iterator(Array<double> const & coords, const bool soa)
+    void update_iterator(Array<double> const & coords)
     {
-        m_cell_lists.update(coords, soa);
+        m_cell_lists.update(coords);
     }
 };
 

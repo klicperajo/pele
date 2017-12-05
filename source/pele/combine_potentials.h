@@ -32,16 +32,16 @@ public:
         _potentials.push_back(potential);
     }
 
-    virtual double get_energy(Array<double> const & x, const bool soa=false)
+    virtual double get_energy(Array<double> const & x)
     {
         double energy = 0.;
         for (auto & pot_ptr : _potentials){
-            energy += pot_ptr->get_energy(x, soa);
+            energy += pot_ptr->get_energy(x);
         }
         return energy;
     }
 
-    virtual double get_energy_gradient(Array<double> const & x, Array<double> & grad, const bool soa=false)
+    virtual double get_energy_gradient(Array<double> const & x, Array<double> & grad)
     {
         if (x.size() != grad.size()) {
             throw std::invalid_argument("the gradient has the wrong size");
@@ -51,13 +51,13 @@ public:
         grad.assign(0.);
 
         for (auto & pot_ptr : _potentials){
-            energy += pot_ptr->add_energy_gradient(x, grad, soa);
+            energy += pot_ptr->add_energy_gradient(x, grad);
         }
         return energy;
     }
 
     virtual double get_energy_gradient_hessian(Array<double> const & x, Array<double> & grad,
-            Array<double> & hess, const bool soa=false)
+            Array<double> & hess)
     {
         if (x.size() != grad.size()) {
             throw std::invalid_argument("the gradient has the wrong size");
@@ -71,7 +71,7 @@ public:
         hess.assign(0.);
 
         for (auto & pot_ptr : _potentials){
-            energy += pot_ptr->add_energy_gradient_hessian(x, grad, hess, soa);
+            energy += pot_ptr->add_energy_gradient_hessian(x, grad, hess);
         }
         return energy;
     }

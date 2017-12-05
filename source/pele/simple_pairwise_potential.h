@@ -61,22 +61,22 @@ public:
         return _dist->get_rij(r_ij, r1, r2);
     }
 
-    virtual double get_energy(Array<double> const & x, const bool soa=false);
-    virtual double get_energy_gradient(Array<double> const & x, Array<double> & grad, const bool soa=false)
+    virtual double get_energy(Array<double> const & x);
+    virtual double get_energy_gradient(Array<double> const & x, Array<double> & grad)
     {
         grad.assign(0);
-        return add_energy_gradient(x, grad, soa);
+        return add_energy_gradient(x, grad);
     }
     virtual double get_energy_gradient_hessian(Array<double> const & x, Array<double> & grad,
-                                               Array<double> & hess, const bool soa=false)
+                                               Array<double> & hess)
     {
         grad.assign(0);
         hess.assign(0);
-        return add_energy_gradient_hessian(x, grad, hess, soa);
+        return add_energy_gradient_hessian(x, grad, hess);
     }
-    virtual double add_energy_gradient(Array<double> const & x, Array<double> & grad, const bool soa=false);
+    virtual double add_energy_gradient(Array<double> const & x, Array<double> & grad);
     virtual double add_energy_gradient_hessian(Array<double> const & x, Array<double> & grad,
-                                               Array<double> & hess, const bool soa=false);
+                                               Array<double> & hess);
     virtual void get_neighbors(pele::Array<double> const & coords,
                                 pele::Array<std::vector<size_t>> & neighbor_indss,
                                 pele::Array<std::vector<std::vector<double>>> & neighbor_distss,
@@ -97,10 +97,10 @@ public:
     }
 
     // Compute the maximum of all single atom norms
-    virtual inline double compute_norm(pele::Array<double> const & x, const bool soa=false) {
+    virtual inline double compute_norm(pele::Array<double> const & x) {
         const size_t natoms = x.size() / m_ndim;
         double max_x = 0;
-        if (soa)
+        if (m_soa)
         {
             #pragma simd reduction(max : max_x)
             for (size_t atom_i = 0;  atom_i < natoms; ++atom_i) {
@@ -131,7 +131,7 @@ public:
 template<typename pairwise_interaction, typename distance_policy>
 inline double
 SimplePairwisePotential<pairwise_interaction, distance_policy>::add_energy_gradient(
-        Array<double> const & x, Array<double> & grad, const bool soa)
+        Array<double> const & x, Array<double> & grad)
 {
     const size_t natoms = x.size() / m_ndim;
     if (m_ndim * natoms != x.size()) {
@@ -149,7 +149,7 @@ SimplePairwisePotential<pairwise_interaction, distance_policy>::add_energy_gradi
 
     for (size_t atom_i=0; atom_i<natoms; ++atom_i) {
         for (size_t atom_j=0; atom_j<atom_i; ++atom_j) {
-            if (soa) {
+            if (m_soa) {
                 _dist->get_rij_soa(dr, &x[atom_i], &x[atom_j], natoms);
             } else {
                 _dist->get_rij(dr, &x[atom_i*m_ndim], &x[atom_j*m_ndim]);
@@ -164,7 +164,7 @@ SimplePairwisePotential<pairwise_interaction, distance_policy>::add_energy_gradi
                 #pragma unroll
                 for (size_t k=0; k<m_ndim; ++k) {
                     dr[k] *= gij;
-                    if (soa) {
+                    if (m_soa) {
                         const size_t k1 = k * natoms;
                         grad[atom_i + k1] -= dr[k];
                         grad[atom_j + k1] += dr[k];
@@ -181,7 +181,7 @@ SimplePairwisePotential<pairwise_interaction, distance_policy>::add_energy_gradi
 
 template<typename pairwise_interaction, typename distance_policy>
 inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::add_energy_gradient_hessian(
-    Array<double> const & x, Array<double> & grad, Array<double> & hess, const bool soa)
+    Array<double> const & x, Array<double> & grad, Array<double> & hess)
 {
     double hij, gij;
     double dr[m_ndim];
@@ -203,7 +203,7 @@ inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::ad
     for (size_t atom_i=0; atom_i<natoms; ++atom_i) {
         for (size_t atom_j=0;atom_j<atom_i;++atom_j){
 
-            if (soa) {
+            if (m_soa) {
                 _dist->get_rij_soa(dr, &x[atom_i], &x[atom_j], natoms);
             } else {
                 _dist->get_rij(dr, &x[atom_i*m_ndim], &x[atom_j*m_ndim]);
@@ -218,7 +218,7 @@ inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::ad
             if (gij != 0) {
                 #pragma unroll
                 for (size_t k=0; k<m_ndim; ++k) {
-                    if (soa) {
+                    if (m_soa) {
                         const size_t k1 = k * natoms;
                         grad[atom_i + k1] -= gij * dr[k];
                         grad[atom_j + k1] += gij * dr[k];
@@ -231,7 +231,7 @@ inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::ad
 
             if (hij != 0) {
                 for (size_t k=0; k<m_ndim; ++k) {
-                    if (soa) {
+                    if (m_soa) {
                         const size_t k1 = k * natoms;
                         //diagonal block - diagonal terms
                         double Hii_diag = (hij+gij)*dr[k]*dr[k]/r2 - gij;
@@ -291,7 +291,7 @@ inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::ad
 
 template<typename pairwise_interaction, typename distance_policy>
 inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::get_energy(
-    Array<double> const & x, const bool soa)
+    Array<double> const & x)
 {
     const size_t natoms = x.size() / m_ndim;
     if (m_ndim * natoms != x.size()) {
@@ -302,7 +302,7 @@ inline double SimplePairwisePotential<pairwise_interaction, distance_policy>::ge
 
     for (size_t atom_i=0; atom_i<natoms; ++atom_i) {
         for (size_t atom_j=0; atom_j<atom_i; ++atom_j) {
-            if (soa) {
+            if (m_soa) {
                 _dist->get_rij_soa(dr, &x[atom_i], &x[atom_j], natoms);
             } else {
                 _dist->get_rij(dr, &x[atom_i*m_ndim], &x[atom_j*m_ndim]);
