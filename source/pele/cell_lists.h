@@ -23,21 +23,6 @@ namespace {
 // Type of each cell inside the cell list
 using cell_t = std::vector<long>;
 
-template<class T, size_t box_dimension>
-struct periodic_policy_check_helper {
-    const static bool is_periodic = false;
-};
-
-template<size_t box_dimension>
-struct periodic_policy_check_helper<pele::periodic_distance<box_dimension>, box_dimension > {
-    const static bool is_periodic = true;
-};
-
-template<class T>
-struct periodic_policy_check {
-    const static bool is_periodic = periodic_policy_check_helper<T, T::_ndim>::is_periodic;
-};
-
 /**
  * container for the cell lists
  */
@@ -204,9 +189,9 @@ public:
     size_t m_subdom_avg_len; //!< Average subdomain length. Only used in balanced case, therefore integer.
 
     LatticeNeighbors(std::shared_ptr<distance_policy> const & dist,
-            pele::Array<double> const & boxvec,
-            const double rcut,
-            pele::Array<size_t> const & ncells_vec)
+                     pele::Array<double> const & boxvec,
+                     const double rcut,
+                     pele::Array<size_t> const & ncells_vec)
         : m_dist(dist),
           m_boxvec(boxvec),
           m_rcut(rcut),
@@ -330,10 +315,24 @@ public:
     cell_vec_t position_to_cell_vec(const double * const x) const
     {
         double x_in_box[ndim];
-        std::copy(x, x + ndim, x_in_box);
-        m_dist->put_atom_in_box(x_in_box);
+        m_dist->put_atom_in_box(x_in_box, x);
 
         cell_vec_t cell_vec;
+        #pragma unroll
+        for(size_t idim = 0; idim < ndim; ++idim) {
+            cell_vec[idim] = m_ncells_vec[idim] * (x_in_box[idim] * m_inv_boxvec[idim] + 0.5
+                                                   - std::numeric_limits<double>::epsilon());
+            assert(cell_vec[idim] < m_ncells_vec[idim]); // Cell index is inside bounds (if not, the coordinates might be defective/too large)
+        }
+        return cell_vec;
+    }
+    cell_vec_t position_to_cell_vec_soa(const double * const x, const size_t natoms) const
+    {
+        double x_in_box[ndim];
+        m_dist->put_atom_in_box_soa(x_in_box, x, natoms);
+
+        cell_vec_t cell_vec;
+        #pragma unroll
         for(size_t idim = 0; idim < ndim; ++idim) {
             cell_vec[idim] = m_ncells_vec[idim] * (x_in_box[idim] * m_inv_boxvec[idim] + 0.5
                                                    - std::numeric_limits<double>::epsilon());
@@ -353,6 +352,14 @@ public:
         isubdom = get_subdomain(cell_vec);
         icell = cell_vec_to_local_ind(cell_vec, isubdom);
     }
+    void position_to_local_ind_soa(const double * const x, size_t & icell, size_t & isubdom, const size_t natoms) const
+    {
+        // note: the speed of this function is important because it is called
+        // once per atom each time update_container is called.
+        cell_vec_t cell_vec = position_to_cell_vec_soa(x, natoms);
+        isubdom = get_subdomain(cell_vec);
+        icell = cell_vec_to_local_ind(cell_vec, isubdom);
+    }
 
     /**
      * return the global index of the cell that contains position x
@@ -362,6 +369,13 @@ public:
         // note: the speed of this function is important because it is called
         // once per atom each time update_container is called.
         cell_vec_t cell_vec = position_to_cell_vec(x);
+        icell = cell_vec_to_global_ind(cell_vec);
+    }
+    void position_to_global_ind_soa(const double * const x, size_t & icell, const size_t natoms) const
+    {
+        // note: the speed of this function is important because it is called
+        // once per atom each time update_container is called.
+        cell_vec_t cell_vec = position_to_cell_vec_soa(x, natoms);
         icell = cell_vec_to_global_ind(cell_vec);
     }
 
@@ -610,6 +624,7 @@ template <class visitor_t, typename distance_policy = periodic_distance<3> >
 class CellListsLoop {
 protected:
     static const size_t m_ndim = distance_policy::_ndim;
+    const size_t m_soa;
     typedef VecN<m_ndim, size_t> cell_vec_t;
     visitor_t & m_visitor;
     CellListsContainer<m_ndim> const & m_container;
@@ -651,10 +666,12 @@ public:
     CellListsLoop(
         visitor_t & visitor,
         CellListsContainer<m_ndim> const & container,
-        pele::LatticeNeighbors<distance_policy> lattice_tool)
+        pele::LatticeNeighbors<distance_policy> lattice_tool,
+        const bool soa=false)
         : m_visitor(visitor),
           m_container(container),
-          m_lattice_tool(lattice_tool)
+          m_lattice_tool(lattice_tool),
+          m_soa(soa)
     {}
 
     void loop_through_atom_pairs()
@@ -681,8 +698,15 @@ public:
         std::vector<long> const & iatoms)
     {
         std::vector<size_t> icells = std::vector<size_t>(iatoms.size());
-        for (size_t i = 0; i < iatoms.size(); ++i) {
-            m_lattice_tool.position_to_global_ind(coords.data() + m_ndim * iatoms[i], icells[i]);
+        if (m_soa) {
+            const size_t natoms = coords.size() / m_ndim;
+            for (size_t i = 0; i < iatoms.size(); ++i) {
+                m_lattice_tool.position_to_global_ind_soa(coords.data() + iatoms[i], icells[i], natoms);
+            }
+        } else {
+            for (size_t i = 0; i < iatoms.size(); ++i) {
+                m_lattice_tool.position_to_global_ind(coords.data() + m_ndim * iatoms[i], icells[i]);
+            }
         }
         loop_cell_pairs_specific(icells, iatoms);
     }
@@ -701,7 +725,6 @@ class CellLists{
 public:
     static const size_t m_ndim = distance_policy::_ndim;
 protected:
-
     bool m_initialized; // flag for whether the cell lists have been initialized with coordinates
     pele::LatticeNeighbors<distance_policy> m_lattice_tool;
     std::vector<SafePushQueue<std::array<long, 2>>> add_atom_queue;
@@ -732,9 +755,10 @@ public:
      * return the class which loops over the atom pairs with a callback function
      */
     template <class callback_class>
-    inline CellListsLoop<callback_class, distance_policy> get_atom_pair_looper(callback_class & callback) const
+    inline CellListsLoop<callback_class, distance_policy> get_atom_pair_looper(
+        callback_class & callback, const bool soa=false) const
     {
-        return CellListsLoop<callback_class, distance_policy>(callback, m_container, m_lattice_tool);
+        return CellListsLoop<callback_class, distance_policy>(callback, m_container, m_lattice_tool, soa);
     }
 
     /**
@@ -766,15 +790,15 @@ public:
     /**
      * update the cell list iterator with new coordinates
      */
-    void update(pele::Array<double> const & coords);
-    void update_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords);
+    void update(pele::Array<double> const & coords, const bool soa=false);
+    void update_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords, const bool soa=false);
 
 protected:
     void print_warnings(const size_t natoms);
     void build_cell_neighbors_list();
-    void reset_container(pele::Array<double> const & coords);
-    void update_container(pele::Array<double> const & coords);
-    void update_container_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords);
+    void reset_container(pele::Array<double> const & coords, const bool soa);
+    void update_container(pele::Array<double> const & coords, const bool soa);
+    void update_container_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords, const bool soa);
 private:
     static Array<size_t> get_ncells_vec(Array<double> const & boxv, const double rcut,
                                         const double ncellx_scale, const bool balance_omp);
@@ -864,15 +888,15 @@ void CellLists<distance_policy>::print_warnings(const size_t natoms)
  * update or re-build cell lists
  */
 template <typename distance_policy>
-void CellLists<distance_policy>::update(pele::Array<double> const & coords)
+void CellLists<distance_policy>::update(pele::Array<double> const & coords, const bool soa)
 {
     if (m_initialized) {
-        update_container(coords);
+        update_container(coords, soa);
     } else {
         m_initialized = true;
-        size_t natoms = coords.size() / m_ndim;
+        const size_t natoms = coords.size() / m_ndim;
         print_warnings(natoms);
-        reset_container(coords);
+        reset_container(coords, soa);
     }
 }
 
@@ -880,15 +904,15 @@ void CellLists<distance_policy>::update(pele::Array<double> const & coords)
  * update or re-build (part of) the cell lists
  */
 template <typename distance_policy>
-void CellLists<distance_policy>::update_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords)
+void CellLists<distance_policy>::update_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords, const bool soa)
 {
     if (m_initialized) {
-        update_container_specific(coords, iatoms, old_coords);
+        update_container_specific(coords, iatoms, old_coords, soa);
     } else {
         m_initialized = true;
-        size_t natoms = coords.size() / m_ndim;
+        const size_t natoms = coords.size() / m_ndim;
         print_warnings(natoms);
-        reset_container(coords);
+        reset_container(coords, soa);
     }
 }
 
@@ -909,14 +933,19 @@ void CellLists<distance_policy>::build_cell_neighbors_list()
  * remove all atoms and re-add them to the right cells according to the new coordinates
  */
 template <typename distance_policy>
-void CellLists<distance_policy>::reset_container(pele::Array<double> const & coords)
+void CellLists<distance_policy>::reset_container(pele::Array<double> const & coords, const bool soa)
 {
+    const size_t natoms = coords.size() / m_ndim;
     m_container.reset();
-    size_t natoms = coords.size() / m_ndim;
     for(long iatom = 0; iatom < natoms; ++iatom) {
-        const double * const x = coords.data() + m_ndim * iatom;
         size_t icell, isubdom;
-        m_lattice_tool.position_to_local_ind(x, icell, isubdom);
+        if (soa) {
+            const double * const x = coords.data() + iatom;
+            m_lattice_tool.position_to_local_ind_soa(x, icell, isubdom, natoms);
+        } else {
+            const double * const x = coords.data() + m_ndim * iatom;
+            m_lattice_tool.position_to_local_ind(x, icell, isubdom);
+        }
         m_container.add_atom_to_cell(iatom, icell, isubdom);
     }
 }
@@ -925,8 +954,9 @@ void CellLists<distance_policy>::reset_container(pele::Array<double> const & coo
  * re-calculate the cells for all atoms according to new coordinates
  */
 template <typename distance_policy>
-void CellLists<distance_policy>::update_container(pele::Array<double> const & coords)
+void CellLists<distance_policy>::update_container(pele::Array<double> const & coords, const bool soa)
 {
+    const size_t natoms = coords.size() / m_ndim;
     #ifdef _OPENMP
     #pragma omp parallel
     {
@@ -935,9 +965,14 @@ void CellLists<distance_policy>::update_container(pele::Array<double> const & co
             size_t atom_nr = 0;
             while (atom_nr < m_container.m_cell_atoms[isubdom][icell].size()) {
                 long iatom = m_container.m_cell_atoms[isubdom][icell][atom_nr];
-                const double * const new_x = coords.data() + m_ndim * iatom;
                 size_t new_cell, new_subdom;
-                m_lattice_tool.position_to_local_ind(new_x, new_cell, new_subdom);
+                if (soa) {
+                    const double * const new_x = coords.data() + iatom;
+                    m_lattice_tool.position_to_local_ind_soa(new_x, new_cell, new_subdom, natoms);
+                } else {
+                    const double * const new_x = coords.data() + m_ndim * iatom;
+                    m_lattice_tool.position_to_local_ind(new_x, new_cell, new_subdom);
+                }
                 if (new_cell != icell || new_subdom != isubdom) {
                     m_container.remove_atom_from_cell_ind(atom_nr, icell, isubdom);
                     if (isubdom == new_subdom) {
@@ -966,9 +1001,14 @@ void CellLists<distance_policy>::update_container(pele::Array<double> const & co
             size_t atom_nr = 0;
             while (atom_nr < m_container.m_cell_atoms[isubdom][icell].size()) {
                 long iatom = m_container.m_cell_atoms[isubdom][icell][atom_nr];
-                const double * const new_x = coords.data() + m_ndim * iatom;
                 size_t new_cell, new_subdom;
-                m_lattice_tool.position_to_local_ind(new_x, new_cell, new_subdom);
+                if (soa) {
+                    const double * const new_x = coords.data() + iatom;
+                    m_lattice_tool.position_to_local_ind_soa(new_x, new_cell, new_subdom, natoms);
+                } else {
+                    const double * const new_x = coords.data() + m_ndim * iatom;
+                    m_lattice_tool.position_to_local_ind(new_x, new_cell, new_subdom);
+                }
                 if (new_cell != icell || new_subdom != isubdom) {
                     m_container.remove_atom_from_cell_ind(atom_nr, icell, isubdom);
                     m_container.add_atom_to_cell(iatom, new_cell, new_subdom);
@@ -985,13 +1025,19 @@ void CellLists<distance_policy>::update_container(pele::Array<double> const & co
  * re-calculate the cells for the specified atoms according to new coordinates
  */
 template <typename distance_policy>
-void CellLists<distance_policy>::update_container_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords)
+void CellLists<distance_policy>::update_container_specific(pele::Array<double> const & coords, std::vector<long> const & iatoms, std::vector<double> const & old_coords, const bool soa)
 {
+    const size_t natoms = coords.size() / m_ndim;
     for (size_t iatom = 0; iatom < iatoms.size(); iatom++) {
         size_t old_cell, old_subdom;
-        m_lattice_tool.position_to_local_ind(old_coords.data() + m_ndim * iatom, old_cell, old_subdom);
         size_t new_cell, new_subdom;
-        m_lattice_tool.position_to_local_ind(coords.data() + m_ndim * iatoms[iatom], new_cell, new_subdom);
+        if (soa) {
+            m_lattice_tool.position_to_local_ind_soa(old_coords.data() + iatom, old_cell, old_subdom, natoms);
+            m_lattice_tool.position_to_local_ind_soa(coords.data() + iatoms[iatom], new_cell, new_subdom, natoms);
+        } else {
+            m_lattice_tool.position_to_local_ind(old_coords.data() + m_ndim * iatom, old_cell, old_subdom);
+            m_lattice_tool.position_to_local_ind(coords.data() + m_ndim * iatoms[iatom], new_cell, new_subdom);
+        }
         if (new_cell != old_cell || new_subdom != old_subdom) {
             m_container.remove_atom_from_cell(iatoms[iatom], old_cell, old_subdom);
             m_container.add_atom_to_cell(iatoms[iatom], new_cell, new_subdom);

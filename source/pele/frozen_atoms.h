@@ -168,18 +168,18 @@ public:
         return coords_converter.get_full_coords(reduced_coords);
     }
 
-    inline double get_energy(Array<double> const & reduced_coords)
+    inline double get_energy(Array<double> const & reduced_coords, const bool soa=false)
     {
         if (reduced_coords.size() != coords_converter.ndof_mobile()){
             throw std::runtime_error("reduced coords does not have the right size");
         }
         Array<double> full_coords(coords_converter.get_full_coords(reduced_coords));
-        double const energy = _underlying_potential->get_energy(full_coords);
+        double const energy = _underlying_potential->get_energy(full_coords, soa);
         //reduced_coords.assign(coords_converter.get_reduced_coords(full_coords));
         return energy;
     }
 
-    inline double get_energy_gradient(Array<double> const & reduced_coords, Array<double> & reduced_grad)
+    inline double get_energy_gradient(Array<double> const & reduced_coords, Array<double> & reduced_grad, const bool soa=false)
     {
         if (reduced_coords.size() != coords_converter.ndof_mobile()){
             throw std::runtime_error("reduced coords does not have the right size");
@@ -190,14 +190,14 @@ public:
 
         Array<double> full_coords(coords_converter.get_full_coords(reduced_coords));
         Array<double> gfull(coords_converter.ndof());
-        double const energy = _underlying_potential->get_energy_gradient(full_coords, gfull);
+        double const energy = _underlying_potential->get_energy_gradient(full_coords, gfull, soa);
         //reduced_coords.assign(coords_converter.get_reduced_coords(full_coords));
         reduced_grad.assign(coords_converter.get_reduced_coords(gfull));
         return energy;
     }
 
     inline double get_energy_gradient_hessian(Array<double> const & reduced_coords,
-            Array<double> & reduced_grad, Array<double> & reduced_hess)
+            Array<double> & reduced_grad, Array<double> & reduced_hess, const bool soa=false)
     {
         if (reduced_coords.size() != coords_converter.ndof_mobile()){
             throw std::runtime_error("reduced coords does not have the right size");
@@ -211,7 +211,7 @@ public:
         Array<double> full_coords(coords_converter.get_full_coords(reduced_coords));
         Array<double> gfull(coords_converter.ndof());
         Array<double> hfull(coords_converter.ndof()*coords_converter.ndof());
-        const double energy = _underlying_potential->get_energy_gradient_hessian(full_coords, gfull, hfull);
+        const double energy = _underlying_potential->get_energy_gradient_hessian(full_coords, gfull, hfull, soa);
         //reduced_coords.assign(coords_converter.get_reduced_coords(full_coords));
         reduced_grad.assign(coords_converter.get_reduced_coords(gfull));
         reduced_hess.assign(coords_converter.get_reduced_hessian(hfull));

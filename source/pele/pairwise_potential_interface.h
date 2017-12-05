@@ -30,9 +30,13 @@ public:
         }
     }
 
+    virtual ~PairwisePotentialInterface() {}
+
+    /**
+     * Return the radii (if the interaction potential actually uses radii).
+     */
     virtual pele::Array<double> get_radii() { return m_radii.copy();}
 
-    virtual ~PairwisePotentialInterface() {}
     /**
      * Return the number of dimensions (box dimensions).
      * Ideally this should be overloaded.

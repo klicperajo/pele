@@ -118,7 +118,7 @@ public:
 
     //virtual double inline get_energy(pele::Array<double> const & x);
     /* calculate energy from distance squared, r0 is the hard core distance, r is the distance between the centres */
-    virtual double inline get_energy(pele::Array<double> const & x)
+    virtual double inline get_energy(pele::Array<double> const & x, const bool soa=false)
     {
         if (x_opt != x) {
             throw std::runtime_error("LowestEigPotential::get_energy: x_opt is different from x. Use set_x_opt to pass a pointer.");
@@ -139,7 +139,7 @@ public:
     //virtual double inline get_energy_gradient(pele::Array<double> x,
     //        pele::Array<double> grad);
     /* calculate energy and gradient from distance squared, gradient is in g/|rij|, r0 is the hard core distance, r is the distance between the centres */
-    virtual double inline get_energy_gradient(pele::Array<double> const & x, pele::Array<double> & grad)
+    virtual double inline get_energy_gradient(pele::Array<double> const & x, pele::Array<double> & grad, const bool soa=false)
     {
         if (x_opt != x) {
             throw std::runtime_error("LowestEigPotential::get_energy_gradient: x_opt is different from x. Use set_x_opt to pass a pointer.");

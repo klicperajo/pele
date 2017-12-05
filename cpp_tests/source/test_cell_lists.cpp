@@ -1227,3 +1227,141 @@ TEST_F(CellListsSpecificTest, Number_of_overlaps){
         ASSERT_EQ(4 * (i-9), get_overlaps(x, iatoms, old_coords, radii, cell, dist));
     }
 }
+
+
+class SoACellListsTest : public ::testing::Test {
+public:
+    size_t seed;
+    std::mt19937_64 generator;
+    std::uniform_real_distribution<double> distribution;
+    size_t nparticles;
+    size_t ndim;
+    size_t ndof;
+    double eps;
+    double sca;
+    double r_hs;
+    Array<double> x_aos;
+    Array<double> x_soa;
+    Array<double> radii;
+    Array<double> boxvec;
+    double rcut;
+    virtual void SetUp() {
+        #ifdef _OPENMP
+        omp_set_num_threads(1);
+        #endif
+        seed = 42;
+        generator = std::mt19937_64(seed);
+        distribution = std::uniform_real_distribution<double>(-1, 1);
+        nparticles = 5; // 50
+        ndim = 2;
+        ndof = nparticles * ndim;
+        eps = 1;
+        r_hs = 1;
+        x_aos = Array<double>(ndof);
+        x_soa = Array<double>(ndof);
+        radii = Array<double>(nparticles);
+        for (size_t i = 0; i < nparticles; ++i) {
+            radii[i] = r_hs;
+        }
+        sca = 0.2;
+        rcut = 2 * (1 + sca) * *std::max_element(radii.begin(), radii.end());
+    }
+
+    void aos_to_soa(pele::Array<double> const & coords_aos, pele::Array<double>& coords_soa) {
+        for (size_t idim = 0; idim < ndim; ++idim) {
+            for (size_t iatom = 0; iatom < nparticles; ++iatom) {
+                coords_soa[idim*nparticles + iatom] = coords_aos[iatom*ndim + idim];
+            }
+        }
+    }
+
+    void create_coords() {
+        // Order atoms like a stair
+        Array<double> coords(2);
+        size_t k = 0;
+        for(int i = 0; i < nparticles; i++) {
+            coords[k] += (1 + (0.6 + 0.5 * distribution(generator)) * sca) * 2 * r_hs;
+            x_aos[2*i] = coords[0];
+            x_aos[2*i + 1] = coords[1];
+            if(k == 0) {
+                k = 1;
+            } else {
+                k = 0;
+            }
+        }
+        aos_to_soa(x_aos, x_soa);
+        boxvec = Array<double>(ndim, std::max<double>(fabs(*std::max_element(x_soa.data(), x_soa.data() + ndof)), fabs(*std::min_element(x_soa.data(), x_soa.data() + ndof))) + rcut);
+    }
+};
+
+TEST_F(SoACellListsTest, HSWCAEnergyLeesEdwards_Works) {
+    for(double shear = 0.0; shear <= 0.2; shear += 0.1) {
+        create_coords();
+        pele::HS_WCALeesEdwardsCellLists<2> pot(eps, sca, radii, boxvec, shear, 1.0);
+        for(size_t new_coords = 0; new_coords < 10; new_coords++) {
+            create_coords();
+            const double e_aos = pot.get_energy(x_aos, false);
+            const double e_soa = pot.get_energy(x_soa, true);
+            EXPECT_TRUE(almostEqual(e_aos, e_soa, 8));
+        }
+    }
+}
+TEST_F(SoACellListsTest, HSWCAEnergyGradientLeesEdwards_Works) {
+    for(double shear = 0.0; shear <= 0.2; shear += 0.1) {
+        create_coords();
+        pele::HS_WCALeesEdwardsCellLists<2> pot(eps, sca, radii, boxvec, shear, 1.0);
+        for(size_t new_coords = 0; new_coords < 10; new_coords++) {
+            create_coords();
+            const double e_aos = pot.get_energy(x_aos, false);
+            const double e_soa = pot.get_energy(x_soa, true);
+            pele::Array<double> g_aos(x_aos.size());
+            pele::Array<double> g_soa(x_soa.size());
+            const double eg_aos = pot.get_energy_gradient(x_aos, g_aos, false);
+            const double eg_soa = pot.get_energy_gradient(x_soa, g_soa, true);
+            EXPECT_TRUE(almostEqual(e_aos, e_soa, 8));
+            EXPECT_TRUE(almostEqual(e_soa, eg_soa, 8));
+            EXPECT_TRUE(almostEqual(eg_aos, eg_soa, 8));
+            for (size_t idim = 0; idim < ndim; ++idim) {
+                for (size_t iatom = 0; iatom < nparticles; ++iatom) {
+                    EXPECT_TRUE(almostEqual(g_aos[iatom*ndim + idim], g_soa[idim*nparticles + iatom], 8));
+                }
+            }
+        }
+    }
+}
+TEST_F(SoACellListsTest, HSWCAEnergyGradientHessianLeesEdwards_Works) {
+    for(double shear = 0.0; shear <= 0.2; shear += 0.1) {
+        create_coords();
+        pele::HS_WCALeesEdwardsCellLists<2> pot(eps, sca, radii, boxvec, shear, 1.0);
+        for(size_t new_coords = 0; new_coords < 10; new_coords++) {
+            create_coords();
+            const double e_aos = pot.get_energy(x_aos, false);
+            const double e_soa = pot.get_energy(x_soa, true);
+            pele::Array<double> g_aos(x_aos.size());
+            pele::Array<double> g_soa(x_soa.size());
+            pele::Array<double> h_aos(x_aos.size() * x_aos.size());
+            pele::Array<double> h_soa(h_aos.size());
+            const double egh_aos = pot.get_energy_gradient_hessian(x_aos, g_aos, h_aos, false);
+            const double egh_soa = pot.get_energy_gradient_hessian(x_soa, g_soa, h_soa, true);
+            EXPECT_TRUE(almostEqual(e_aos, e_soa, 8));
+            EXPECT_TRUE(almostEqual(e_soa, egh_soa, 8));
+            EXPECT_TRUE(almostEqual(egh_aos, egh_soa, 8));
+            for (size_t idim = 0; idim < ndim; ++idim) {
+                for (size_t iatom = 0; iatom < nparticles; ++iatom) {
+                    EXPECT_TRUE(almostEqual(g_aos[iatom*ndim + idim], g_soa[idim*nparticles + iatom], 8));
+                }
+            }
+            for (size_t idim = 0; idim < ndim; ++idim) {
+                for (size_t iatom = 0; iatom < nparticles; ++iatom) {
+                    for (size_t jdim = 0; jdim < ndim; ++jdim) {
+                        for (size_t jatom = 0; jatom < nparticles; ++jatom) {
+                            size_t ind_aos = ndof*(iatom*ndim + idim) + jatom*ndim + jdim;
+                            size_t ind_soa = ndof*(idim*nparticles + iatom) + jdim*nparticles + jatom;
+                            EXPECT_TRUE(almostEqual(h_aos[ind_aos], h_soa[ind_soa], 8));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

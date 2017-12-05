@@ -521,3 +521,192 @@ TEST_F(DistanceTest, LeesEdwards_Shear)
         }
     }
 }
+
+
+void aos_to_soa(pele::Array<double> const & coords_aos, pele::Array<double>& coords_soa,
+                const size_t natoms, const size_t ndim) {
+    for (size_t idim = 0; idim < ndim; ++idim) {
+        for (size_t iatom = 0; iatom < natoms; ++iatom) {
+            coords_soa[idim*natoms + iatom] = coords_aos[iatom*ndim + idim];
+        }
+    }
+}
+
+TEST_F(DistanceTest, SoA_cartesian_rij)
+{
+    size_t seed = 42;
+    std::mt19937_64 generator = std::mt19937_64(seed);
+    std::uniform_real_distribution<double> distribution;
+    distribution = std::uniform_real_distribution<double>(-1, 1);
+
+    // Set up test coordinates
+    size_t natoms = 100;
+    size_t ndim = 3;
+    size_t ndof = natoms * ndim;
+    Array<double> x_aos = Array<double>(ndof);
+    Array<double> x_soa = Array<double>(ndof);
+    for (size_t i = 0; i < natoms; i++) {
+        x_aos[i*ndim] = distribution(generator);
+        x_aos[i*ndim + 1] = distribution(generator);
+        x_aos[i*ndim + 2] = distribution(generator);
+    }
+    aos_to_soa(x_aos, x_soa, natoms, ndim);
+
+    // Compute distances using Lees-Edwards
+    Array<double> rij_aos(ndim);
+    Array<double> rij_soa(ndim);
+    for(int i = 0; i < 10; i++) {
+        cartesian_distance<3>().get_rij(rij_aos.data(), x_aos.data() + i*ndim, x_aos.data() + ((i+1)%10)*ndim);
+        cartesian_distance<3>().get_rij_soa(rij_soa.data(), x_soa.data() + i, x_soa.data() + (i+1)%10, natoms);
+        for(int j = 0; j < ndim; j++) {
+            ASSERT_DOUBLE_EQ(rij_aos[j], rij_soa[j]);
+        }
+    }
+}
+TEST_F(DistanceTest, SoA_periodic_rij)
+{
+    size_t seed = 42;
+    std::mt19937_64 generator = std::mt19937_64(seed);
+    std::uniform_real_distribution<double> distribution;
+    distribution = std::uniform_real_distribution<double>(-1, 1);
+
+    // Set up test coordinates
+    size_t natoms = 100;
+    size_t ndim = 3;
+    size_t ndof = natoms * ndim;
+    Array<double> x_aos = Array<double>(ndof);
+    Array<double> x_soa = Array<double>(ndof);
+    for (size_t i = 0; i < natoms; i++) {
+        x_aos[i*ndim] = distribution(generator);
+        x_aos[i*ndim + 1] = distribution(generator);
+        x_aos[i*ndim + 2] = distribution(generator);
+    }
+    aos_to_soa(x_aos, x_soa, natoms, ndim);
+
+    // Set up boxes
+    pele::Array<double> bv3(3, 1.0);
+
+    // Compute distances using Lees-Edwards
+    Array<double> rij_aos(ndim);
+    Array<double> rij_soa(ndim);
+    for(int i = 0; i < 10; i++) {
+        periodic_distance<3>(bv3).get_rij(rij_aos.data(), x_aos.data() + i*ndim, x_aos.data() + ((i+1)%10)*ndim);
+        periodic_distance<3>(bv3).get_rij_soa(rij_soa.data(), x_soa.data() + i, x_soa.data() + (i+1)%10, natoms);
+        for(int j = 0; j < ndim; j++) {
+            ASSERT_DOUBLE_EQ(rij_aos[j], rij_soa[j]);
+        }
+    }
+}
+TEST_F(DistanceTest, SoA_LeesEdwards_rij)
+{
+    size_t seed = 42;
+    std::mt19937_64 generator = std::mt19937_64(seed);
+    std::uniform_real_distribution<double> distribution;
+    distribution = std::uniform_real_distribution<double>(-1, 1);
+
+    // Set up test coordinates
+    size_t natoms = 100;
+    size_t ndim = 3;
+    size_t ndof = natoms * ndim;
+    Array<double> x_aos = Array<double>(ndof);
+    Array<double> x_soa = Array<double>(ndof);
+    for (size_t i = 0; i < natoms; i++) {
+        x_aos[i*ndim] = distribution(generator);
+        x_aos[i*ndim + 1] = distribution(generator);
+        x_aos[i*ndim + 2] = distribution(generator);
+    }
+    aos_to_soa(x_aos, x_soa, natoms, ndim);
+
+    // Set up boxes
+    pele::Array<double> bv3(3, 1.0);
+    double shear = 0.1;
+
+    // Compute distances using Lees-Edwards
+    Array<double> rij_aos(ndim);
+    Array<double> rij_soa(ndim);
+    for(int i = 0; i < 10; i++) {
+        leesedwards_distance<3>(bv3, shear).get_rij(rij_aos.data(), x_aos.data() + i*ndim, x_aos.data() + ((i+1)%10)*ndim);
+        leesedwards_distance<3>(bv3, shear).get_rij_soa(rij_soa.data(), x_soa.data() + i, x_soa.data() + (i+1)%10, natoms);
+        for(int j = 0; j < ndim; j++) {
+            ASSERT_DOUBLE_EQ(rij_aos[j], rij_soa[j]);
+        }
+    }
+}
+
+TEST_F(DistanceTest, SoA_periodic_image)
+{
+    size_t seed = 42;
+    std::mt19937_64 generator = std::mt19937_64(seed);
+    std::uniform_real_distribution<double> distribution;
+    distribution = std::uniform_real_distribution<double>(-1, 1);
+
+    // Set up test coordinates
+    size_t natoms = 100;
+    size_t ndim = 3;
+    size_t ndof = natoms * ndim;
+    Array<double> x_aos = Array<double>(ndof);
+    Array<double> x_soa = Array<double>(ndof);
+    for (size_t i = 0; i < natoms; i++) {
+        x_aos[i*ndim] = distribution(generator);
+        x_aos[i*ndim + 1] = distribution(generator);
+        x_aos[i*ndim + 2] = distribution(generator);
+    }
+    aos_to_soa(x_aos, x_soa, natoms, ndim);
+
+    // Set up boxes
+    pele::Array<double> bv3(3, 0.5);
+
+    // Compute distances using Lees-Edwards
+    Array<double> xbox_aos(ndim);
+    Array<double> xbox_soa(ndim);
+    for(int i = 0; i < 10; i++) {
+        periodic_distance<3>(bv3).put_atom_in_box(xbox_aos.data(), x_aos.data() + i*ndim);
+        periodic_distance<3>(bv3).put_atom_in_box_soa(xbox_soa.data(), x_soa.data() + i, natoms);
+        periodic_distance<3>(bv3).put_atom_in_box(x_aos.data() + i*ndim);
+        periodic_distance<3>(bv3).put_atom_in_box_soa(x_soa.data() + i, natoms);
+        for(int j = 0; j < ndim; j++) {
+            ASSERT_DOUBLE_EQ(xbox_aos[j], xbox_soa[j]);
+            ASSERT_DOUBLE_EQ(xbox_soa[j], x_soa[i + j*natoms]);
+            ASSERT_DOUBLE_EQ(x_aos[i*ndim + j], x_soa[i + j*natoms]);
+        }
+    }
+}
+TEST_F(DistanceTest, SoA_LeesEdwards_image)
+{
+    size_t seed = 42;
+    std::mt19937_64 generator = std::mt19937_64(seed);
+    std::uniform_real_distribution<double> distribution;
+    distribution = std::uniform_real_distribution<double>(-1, 1);
+
+    // Set up test coordinates
+    size_t natoms = 100;
+    size_t ndim = 3;
+    size_t ndof = natoms * ndim;
+    Array<double> x_aos = Array<double>(ndof);
+    Array<double> x_soa = Array<double>(ndof);
+    for (size_t i = 0; i < natoms; i++) {
+        x_aos[i*ndim] = distribution(generator);
+        x_aos[i*ndim + 1] = distribution(generator);
+        x_aos[i*ndim + 2] = distribution(generator);
+    }
+    aos_to_soa(x_aos, x_soa, natoms, ndim);
+
+    // Set up boxes
+    pele::Array<double> bv3(3, 0.5);
+    double shear = 0.1;
+
+    // Compute distances using Lees-Edwards
+    Array<double> xbox_aos(ndim);
+    Array<double> xbox_soa(ndim);
+    for(int i = 0; i < 10; i++) {
+        leesedwards_distance<3>(bv3, shear).put_atom_in_box(xbox_aos.data(), x_aos.data() + i*ndim);
+        leesedwards_distance<3>(bv3, shear).put_atom_in_box_soa(xbox_soa.data(), x_soa.data() + i, natoms);
+        leesedwards_distance<3>(bv3, shear).put_atom_in_box(x_aos.data() + i*ndim);
+        leesedwards_distance<3>(bv3, shear).put_atom_in_box_soa(x_soa.data() + i, natoms);
+        for(int j = 0; j < ndim; j++) {
+            ASSERT_DOUBLE_EQ(xbox_aos[j], xbox_soa[j]);
+            ASSERT_DOUBLE_EQ(xbox_soa[j], x_soa[i + j*natoms]);
+            ASSERT_DOUBLE_EQ(x_aos[i*ndim + j], x_soa[i + j*natoms]);
+        }
+    }
+}

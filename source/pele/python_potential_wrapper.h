@@ -71,7 +71,7 @@ public:
     /**
      * call the getEnergy method of the python potential
      */
-    virtual double get_energy(Array<double> const & x)
+    virtual double get_energy(Array<double> const & x, const bool soa=false)
     {
         // create a numpy array from x
         // copy the data from x because becase the python object might
@@ -116,7 +116,7 @@ public:
     /**
      * call the getEnergyGradient method of the python potential
      */
-    virtual double get_energy_gradient(Array<double> const & x, Array<double> & grad)
+    virtual double get_energy_gradient(Array<double> const & x, Array<double> & grad, const bool soa=false)
     {
         if (x.size() != grad.size()) {
             throw std::invalid_argument("grad.size() be the same as x.size()");

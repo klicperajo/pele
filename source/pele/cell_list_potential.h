@@ -29,6 +29,8 @@ class EnergyAccumulator {
     const pele::Array<double> * m_coords;
     const pele::Array<double> m_radii;
     std::vector<double*> m_energies;
+    bool m_soa;
+    size_t m_natoms;
 
 public:
     ~EnergyAccumulator()
@@ -57,8 +59,11 @@ public:
         #endif
     }
 
-    void reset_data(const pele::Array<double> * coords) {
+    void reset_data(const pele::Array<double> * coords, const bool soa)
+    {
         m_coords = coords;
+        m_soa = soa;
+        m_natoms = m_coords->size() / m_ndim;
         #ifdef _OPENMP
         #pragma omp parallel
         {
@@ -71,10 +76,12 @@ public:
 
     void insert_atom_pair(const size_t atom_i, const size_t atom_j, const size_t isubdom)
     {
-        const size_t xi_off = m_ndim * atom_i;
-        const size_t xj_off = m_ndim * atom_j;
         pele::VecN<m_ndim, double> dr;
-        m_dist->get_rij(dr.data(), m_coords->data() + xi_off, m_coords->data() + xj_off);
+        if (m_soa) {
+            m_dist->get_rij_soa(dr.data(), m_coords->data() + atom_i, m_coords->data() + atom_j, m_natoms);
+        } else {
+            m_dist->get_rij(dr.data(), m_coords->data() + m_ndim * atom_i, m_coords->data() + m_ndim * atom_j);
+        }
         double r2 = 0;
         for (size_t k = 0; k < m_ndim; ++k) {
             r2 += dr[k] * dr[k];
@@ -110,6 +117,8 @@ class EnergyGradientAccumulator {
     const pele::Array<double> * m_coords;
     const pele::Array<double> m_radii;
     std::vector<double*> m_energies;
+    bool m_soa;
+    size_t m_natoms;
 
 public:
     pele::Array<double> * m_gradient;
@@ -140,8 +149,11 @@ public:
         #endif
     }
 
-    void reset_data(const pele::Array<double> * coords, pele::Array<double> * gradient) {
+    void reset_data(const pele::Array<double> * coords, pele::Array<double> * gradient, const bool soa)
+    {
         m_coords = coords;
+        m_soa = soa;
+        m_natoms = m_coords->size() / m_ndim;
         #ifdef _OPENMP
         #pragma omp parallel
         {
@@ -156,9 +168,11 @@ public:
     void insert_atom_pair(const size_t atom_i, const size_t atom_j, const size_t isubdom)
     {
         pele::VecN<m_ndim, double> dr;
-        const size_t xi_off = m_ndim * atom_i;
-        const size_t xj_off = m_ndim * atom_j;
-        m_dist->get_rij(dr.data(), m_coords->data() + xi_off, m_coords->data() + xj_off);
+        if (m_soa) {
+            m_dist->get_rij_soa(dr.data(), m_coords->data() + atom_i, m_coords->data() + atom_j, m_natoms);
+        } else {
+            m_dist->get_rij(dr.data(), m_coords->data() + m_ndim * atom_i, m_coords->data() + m_ndim * atom_j);
+        }
         double r2 = 0;
         for (size_t k = 0; k < m_ndim; ++k) {
             r2 += dr[k] * dr[k];
@@ -176,8 +190,14 @@ public:
         if (gij != 0) {
             for (size_t k = 0; k < m_ndim; ++k) {
                 dr[k] *= gij;
-                (*m_gradient)[xi_off + k] -= dr[k];
-                (*m_gradient)[xj_off + k] += dr[k];
+                if (m_soa) {
+                    const size_t k1 = k * m_natoms;
+                    (*m_gradient)[atom_i + k1] -= dr[k];
+                    (*m_gradient)[atom_j + k1] += dr[k];
+                } else {
+                    (*m_gradient)[atom_i*m_ndim + k] -= dr[k];
+                    (*m_gradient)[atom_j*m_ndim + k] += dr[k];
+                }
             }
         }
     }
@@ -202,6 +222,8 @@ class EnergyGradientHessianAccumulator {
     const pele::Array<double> * m_coords;
     const pele::Array<double> m_radii;
     std::vector<double*> m_energies;
+    bool m_soa;
+    size_t m_natoms;
 
 public:
     pele::Array<double> * m_gradient;
@@ -233,8 +255,15 @@ public:
         #endif
     }
 
-    void reset_data(const pele::Array<double> * coords, pele::Array<double> * gradient, pele::Array<double> * hessian) {
+    void reset_data(
+        const pele::Array<double> * coords,
+        pele::Array<double> * gradient,
+        pele::Array<double> * hessian,
+        const bool soa)
+    {
         m_coords = coords;
+        m_soa = soa;
+        m_natoms = m_coords->size() / m_ndim;
         #ifdef _OPENMP
         #pragma omp parallel
         {
@@ -250,9 +279,11 @@ public:
     void insert_atom_pair(const size_t atom_i, const size_t atom_j, const size_t isubdom)
     {
         pele::VecN<m_ndim, double> dr;
-        const size_t xi_off = m_ndim * atom_i;
-        const size_t xj_off = m_ndim * atom_j;
-        m_dist->get_rij(dr.data(), m_coords->data() + xi_off, m_coords->data() + xj_off);
+        if (m_soa) {
+            m_dist->get_rij_soa(dr.data(), m_coords->data() + atom_i, m_coords->data() + atom_j, m_natoms);
+        } else {
+            m_dist->get_rij(dr.data(), m_coords->data() + m_ndim * atom_i, m_coords->data() + m_ndim * atom_j);
+        }
         double r2 = 0;
         for (size_t k = 0; k < m_ndim; ++k) {
             r2 += dr[k] * dr[k];
@@ -269,37 +300,70 @@ public:
         #endif
         if (gij != 0) {
             for (size_t k = 0; k < m_ndim; ++k) {
-                (*m_gradient)[xi_off + k] -= gij * dr[k];
-                (*m_gradient)[xj_off + k] += gij * dr[k];
+                if (m_soa) {
+                    const size_t k1 = k * m_natoms;
+                    (*m_gradient)[atom_i + k1] -= gij * dr[k];
+                    (*m_gradient)[atom_j + k1] += gij * dr[k];
+                } else {
+                    (*m_gradient)[atom_i*m_ndim + k] -= gij * dr[k];
+                    (*m_gradient)[atom_j*m_ndim + k] += gij * dr[k];
+                }
             }
         }
-        //this part is copied from simple_pairwise_potential.h
-        //(even more so than the rest)
-        const size_t N = m_gradient->size();
-        const size_t i1 = xi_off;
-        const size_t j1 = xj_off;
-        for (size_t k = 0; k < m_ndim; ++k) {
-            //diagonal block - diagonal terms
-            const double Hii_diag = (hij + gij) * dr[k] * dr[k] / r2 - gij;
-            (*m_hessian)[N * (i1 + k) + i1 + k] += Hii_diag;
-            (*m_hessian)[N * (j1 + k) + j1 + k] += Hii_diag;
-            //off diagonal block - diagonal terms
-            const double Hij_diag = -Hii_diag;
-            (*m_hessian)[N * (i1 + k) + j1 + k] = Hij_diag;
-            (*m_hessian)[N * (j1 + k) + i1 + k] = Hij_diag;
-            for (size_t l = k + 1; l < m_ndim; ++l) {
-                //diagonal block - off diagonal terms
-                const double Hii_off = (hij + gij) * dr[k] * dr[l] / r2;
-                (*m_hessian)[N * (i1 + k) + i1 + l] += Hii_off;
-                (*m_hessian)[N * (i1 + l) + i1 + k] += Hii_off;
-                (*m_hessian)[N * (j1 + k) + j1 + l] += Hii_off;
-                (*m_hessian)[N * (j1 + l) + j1 + k] += Hii_off;
-                //off diagonal block - off diagonal terms
-                const double Hij_off = -Hii_off;
-                (*m_hessian)[N * (i1 + k) + j1 + l] = Hij_off;
-                (*m_hessian)[N * (i1 + l) + j1 + k] = Hij_off;
-                (*m_hessian)[N * (j1 + k) + i1 + l] = Hij_off;
-                (*m_hessian)[N * (j1 + l) + i1 + k] = Hij_off;
+        if (hij != 0) {
+            const size_t N = m_ndim * m_natoms;
+            for (size_t k=0; k<m_ndim; ++k) {
+                if (m_soa) {
+                    const size_t k1 = k * m_natoms;
+                    //diagonal block - diagonal terms
+                    double Hii_diag = (hij+gij)*dr[k]*dr[k]/r2 - gij;
+                    (*m_hessian)[N*(atom_i + k1) + atom_i + k1] += Hii_diag;
+                    (*m_hessian)[N*(atom_j + k1) + atom_j + k1] += Hii_diag;
+                    //off diagonal block - diagonal terms
+                    double Hij_diag = -Hii_diag;
+                    (*m_hessian)[N*(atom_i + k1) + atom_j + k1] = Hij_diag;
+                    (*m_hessian)[N*(atom_j + k1) + atom_i + k1] = Hij_diag;
+                    for (size_t l = k+1; l<m_ndim; ++l){
+                        const size_t l1 = l * m_natoms;
+                        //diagonal block - off diagonal terms
+                        double Hii_off = (hij+gij)*dr[k]*dr[l]/r2;
+                        (*m_hessian)[N*(atom_i + k1) + atom_i + l1] += Hii_off;
+                        (*m_hessian)[N*(atom_i + l1) + atom_i + k1] += Hii_off;
+                        (*m_hessian)[N*(atom_j + k1) + atom_j + l1] += Hii_off;
+                        (*m_hessian)[N*(atom_j + l1) + atom_j + k1] += Hii_off;
+                        //off diagonal block - off diagonal terms
+                        double Hij_off = -Hii_off;
+                        (*m_hessian)[N*(atom_i + k1) + atom_j + l1] = Hij_off;
+                        (*m_hessian)[N*(atom_i + l1) + atom_j + k1] = Hij_off;
+                        (*m_hessian)[N*(atom_j + k1) + atom_i + l1] = Hij_off;
+                        (*m_hessian)[N*(atom_j + l1) + atom_i + k1] = Hij_off;
+                    }
+                } else {
+                    const size_t i1 = atom_i * m_ndim;
+                    const size_t j1 = atom_j * m_ndim;
+                    //diagonal block - diagonal terms
+                    double Hii_diag = (hij+gij)*dr[k]*dr[k]/r2 - gij;
+                    (*m_hessian)[N*(i1 + k) + i1 + k] += Hii_diag;
+                    (*m_hessian)[N*(j1 + k) + j1 + k] += Hii_diag;
+                    //off diagonal block - diagonal terms
+                    double Hij_diag = -Hii_diag;
+                    (*m_hessian)[N*(i1 + k) + j1 + k] = Hij_diag;
+                    (*m_hessian)[N*(j1 + k) + i1 + k] = Hij_diag;
+                    for (size_t l = k+1; l<m_ndim; ++l) {
+                        //diagonal block - off diagonal terms
+                        double Hii_off = (hij+gij)*dr[k]*dr[l]/r2;
+                        (*m_hessian)[N*(i1 + k) + i1 + l] += Hii_off;
+                        (*m_hessian)[N*(i1 + l) + i1 + k] += Hii_off;
+                        (*m_hessian)[N*(j1 + k) + j1 + l] += Hii_off;
+                        (*m_hessian)[N*(j1 + l) + j1 + k] += Hii_off;
+                        //off diagonal block - off diagonal terms
+                        double Hij_off = -Hii_off;
+                        (*m_hessian)[N*(i1 + k) + j1 + l] = Hij_off;
+                        (*m_hessian)[N*(i1 + l) + j1 + k] = Hij_off;
+                        (*m_hessian)[N*(j1 + k) + i1 + l] = Hij_off;
+                        (*m_hessian)[N*(j1 + l) + i1 + k] = Hij_off;
+                    }
+                }
             }
         }
     }
@@ -351,9 +415,7 @@ public:
         if (m_include_atoms[atom_i] && m_include_atoms[atom_j]) {
             std::vector<double> dr(m_ndim);
             std::vector<double> neg_dr(m_ndim);
-            const size_t xi_off = m_ndim * atom_i;
-            const size_t xj_off = m_ndim * atom_j;
-            m_dist->get_rij(dr.data(), m_coords.data() + xi_off, m_coords.data() + xj_off);
+            m_dist->get_rij(dr.data(), m_coords.data() + m_ndim * atom_i, m_coords.data() + m_ndim * atom_j);
             double r2 = 0;
             for (size_t k = 0; k < m_ndim; ++k) {
                 r2 += dr[k] * dr[k];
@@ -399,9 +461,7 @@ public:
     void insert_atom_pair(const size_t atom_i, const size_t atom_j, const size_t isubdom)
     {
         pele::VecN<m_ndim, double> dr;
-        const size_t xi_off = m_ndim * atom_i;
-        const size_t xj_off = m_ndim * atom_j;
-        m_dist->get_rij(dr.data(), m_coords.data() + xi_off, m_coords.data() + xj_off);
+        m_dist->get_rij(dr.data(), m_coords.data() + m_ndim * atom_i, m_coords.data() + m_ndim * atom_j);
         double r2 = 0;
         for (size_t k = 0; k < m_ndim; ++k) {
             r2 += dr[k] * dr[k];
@@ -473,7 +533,12 @@ public:
 
     virtual size_t get_ndim(){return m_ndim;}
 
-    virtual double get_energy(Array<double> const & coords)
+    virtual inline void get_rij(double * const r_ij, double const * const r1, double const * const r2) const
+    {
+        return m_dist->get_rij(r_ij, r1, r2);
+    }
+
+    virtual double get_energy(Array<double> const & coords, const bool soa=false)
     {
         const size_t natoms = coords.size() / m_ndim;
         if (m_ndim * natoms != coords.size()) {
@@ -484,16 +549,16 @@ public:
             return NAN;
         }
 
-        update_iterator(coords);
-        m_eAcc.reset_data(&coords);
-        auto looper = m_cell_lists.get_atom_pair_looper(m_eAcc);
+        update_iterator(coords, soa);
+        m_eAcc.reset_data(&coords, soa);
+        auto looper = m_cell_lists.get_atom_pair_looper(m_eAcc, soa);
 
         looper.loop_through_atom_pairs();
 
         return m_eAcc.get_energy();
     }
 
-    virtual double get_energy_gradient(Array<double> const & coords, Array<double> & grad)
+    virtual double get_energy_gradient(Array<double> const & coords, Array<double> & grad, const bool soa=false)
     {
         const size_t natoms = coords.size() / m_ndim;
         if (m_ndim * natoms != coords.size()) {
@@ -508,10 +573,10 @@ public:
             return NAN;
         }
 
-        update_iterator(coords);
+        update_iterator(coords, soa);
         grad.assign(0.);
-        m_egAcc.reset_data(&coords, &grad);
-        auto looper = m_cell_lists.get_atom_pair_looper(m_egAcc);
+        m_egAcc.reset_data(&coords, &grad, soa);
+        auto looper = m_cell_lists.get_atom_pair_looper(m_egAcc, soa);
 
         looper.loop_through_atom_pairs();
 
@@ -519,7 +584,7 @@ public:
     }
 
     virtual double get_energy_gradient_hessian(Array<double> const & coords,
-            Array<double> & grad, Array<double> & hess)
+            Array<double> & grad, Array<double> & hess, const bool soa=false)
     {
         const size_t natoms = coords.size() / m_ndim;
         if (m_ndim * natoms != coords.size()) {
@@ -538,11 +603,11 @@ public:
             return NAN;
         }
 
-        update_iterator(coords);
+        update_iterator(coords, soa);
         grad.assign(0.);
         hess.assign(0.);
-        m_eghAcc.reset_data(&coords, &grad, &hess);
-        auto looper = m_cell_lists.get_atom_pair_looper(m_eghAcc);
+        m_eghAcc.reset_data(&coords, &grad, &hess, soa);
+        auto looper = m_cell_lists.get_atom_pair_looper(m_eghAcc, soa);
 
         looper.loop_through_atom_pairs();
 
@@ -554,7 +619,7 @@ public:
                                 pele::Array<std::vector<std::vector<double>>> & neighbor_distss,
                                 const double cutoff_factor = 1.0)
     {
-        size_t natoms = coords.size() / m_ndim;
+        const size_t natoms = coords.size() / m_ndim;
         pele::Array<short> include_atoms(natoms, 1);
         get_neighbors_picky(coords, neighbor_indss, neighbor_distss, include_atoms, cutoff_factor);
     }
@@ -581,7 +646,7 @@ public:
             return;
         }
 
-        update_iterator(coords);
+        update_iterator(coords, false);
         NeighborAccumulator<pairwise_interaction, distance_policy> accumulator(
             m_interaction, m_dist, coords, m_radii, (1 + m_radii_sca) * cutoff_factor, include_atoms);
         auto looper = m_cell_lists.get_atom_pair_looper(accumulator);
@@ -607,7 +672,7 @@ public:
             return std::vector<size_t>(2, 0);
         }
 
-        update_iterator(coords);
+        update_iterator(coords, false);
         OverlapAccumulator<pairwise_interaction, distance_policy> accumulator(
             m_interaction, m_dist, coords, m_radii);
         auto looper = m_cell_lists.get_atom_pair_looper(accumulator);
@@ -628,16 +693,11 @@ public:
             return pele::Array<size_t>(0);
         }
 
-        update_iterator(coords);
+        update_iterator(coords, false);
         return m_cell_lists.get_order(natoms);
     }
 
     virtual inline size_t get_ndim() const { return m_ndim; }
-
-    virtual inline void get_rij(double * const r_ij, double const * const r1, double const * const r2) const
-    {
-        return m_dist->get_rij(r_ij, r1, r2);
-    }
 
     virtual inline double get_interaction_energy_gradient(double r2, double *gij, size_t atom_i, size_t atom_j) const
     {
@@ -654,26 +714,40 @@ public:
     }
 
     // Compute the maximum of all single atom norms
-    virtual inline double compute_norm(pele::Array<double> const & x) {
+    virtual inline double compute_norm(pele::Array<double> const & x, const bool soa=false) {
         const size_t natoms = x.size() / m_ndim;
-
         double max_x = 0;
-        #pragma simd reduction(max : max_x)
-        for (size_t atom_i = 0;  atom_i < natoms; ++atom_i) {
-            double atom_x = 0;
-            #pragma unroll
-            for (size_t j = 0; j < m_ndim; ++j) {
-                atom_x += x[atom_i * m_ndim + j] * x[atom_i * m_ndim + j];
+        if (soa)
+        {
+            #pragma simd reduction(max : max_x)
+            for (size_t atom_i = 0;  atom_i < natoms; ++atom_i) {
+                double atom_x = 0;
+                #pragma unroll
+                for (size_t j = 0; j < m_ndim; ++j) {
+                    size_t ind = j * natoms + atom_i;
+                    atom_x += x[ind] * x[ind];
+                }
+                max_x = std::max(max_x, atom_x);
             }
-            max_x = std::max(max_x, atom_x);
+        } else {
+            #pragma simd reduction(max : max_x)
+            for (size_t atom_i = 0;  atom_i < natoms; ++atom_i) {
+                double atom_x = 0;
+                #pragma unroll
+                for (size_t j = 0; j < m_ndim; ++j) {
+                    size_t ind = atom_i * m_ndim + j;
+                    atom_x += x[ind] * x[ind];
+                }
+                max_x = std::max(max_x, atom_x);
+            }
         }
         return sqrt(max_x);
     }
 
 protected:
-    void update_iterator(Array<double> const & coords)
+    void update_iterator(Array<double> const & coords, const bool soa)
     {
-        m_cell_lists.update(coords);
+        m_cell_lists.update(coords, soa);
     }
 };
 
