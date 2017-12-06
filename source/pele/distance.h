@@ -212,12 +212,9 @@ struct meta_image {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[k];
-        if (__builtin_expect(xnew[k] > half_box, 0)) {
-            xnew[k] -= _box[k];
-        }
-        if (__builtin_expect(xnew[k] < -half_box, 0)) {
-            xnew[k] += _box[k];
-        }
+        int outside = (xnew[k] < -half_box) - (xnew[k] > half_box);
+        xnew[k] += _box[k] * outside;
+
         meta_image<k>::f(xnew, x, _ibox, _box);
     }
     static void f(double *const x, const double* _ibox,
@@ -228,12 +225,9 @@ struct meta_image {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[k];
-        if (__builtin_expect(x[k] > half_box, 0)) {
-            x[k] -= _box[k];
-        }
-        if (__builtin_expect(x[k] < -half_box, 0)) {
-            x[k] += _box[k];
-        }
+        int outside = (x[k] < -half_box) - (x[k] > half_box);
+        x[k] += _box[k] * outside;
+
         meta_image<k>::f(x, _ibox, _box);
     }
 };
@@ -248,12 +242,9 @@ struct meta_image_soa {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[k];
-        if (__builtin_expect(xnew[k] > half_box, 0)) {
-            xnew[k] -= _box[k];
-        }
-        if (__builtin_expect(xnew[k] < -half_box, 0)) {
-            xnew[k] += _box[k];
-        }
+        int outside = (xnew[k] < -half_box) - (xnew[k] > half_box);
+        xnew[k] += _box[k] * outside;
+
         meta_image_soa<k>::f(xnew, x, _ibox, _box, natoms);
     }
     static void f(double *const x, const double* _ibox,
@@ -265,12 +256,9 @@ struct meta_image_soa {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[k];
-        if (__builtin_expect(x[i] > half_box, 0)) {
-            x[i] -= _box[k];
-        }
-        if (__builtin_expect(x[i] < -half_box, 0)) {
-            x[i] += _box[k];
-        }
+        int outside = (x[i] < -half_box) - (x[i] > half_box);
+        x[i] += _box[k] * outside;
+
         meta_image_soa<k>::f(x, _ibox, _box, natoms);
     }
 };
@@ -284,12 +272,8 @@ struct meta_image<1> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[0];
-        if (__builtin_expect(xnew[0] > half_box, 0)) {
-            xnew[0] -= _box[0];
-        }
-        if (__builtin_expect(xnew[0] < -half_box, 0)) {
-            xnew[0] += _box[0];
-        }
+        int outside = (xnew[0] < -half_box) - (xnew[0] > half_box);
+        xnew[0] += _box[0] * outside;
     }
     static void f(double *const x, const double* _ibox,
                   const double* _box)
@@ -298,12 +282,8 @@ struct meta_image<1> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[0];
-        if (__builtin_expect(x[0] > half_box, 0)) {
-            x[0] -= _box[0];
-        }
-        if (__builtin_expect(x[0] < -half_box, 0)) {
-            x[0] += _box[0];
-        }
+        int outside = (x[0] < -half_box) - (x[0] > half_box);
+        x[0] += _box[0] * outside;
     }
 };
 template<>
@@ -315,12 +295,8 @@ struct meta_image_soa<1> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[0];
-        if (__builtin_expect(xnew[0] > half_box, 0)) {
-            xnew[0] -= _box[0];
-        }
-        if (__builtin_expect(xnew[0] < -half_box, 0)) {
-            xnew[0] += _box[0];
-        }
+        int outside = (xnew[0] < -half_box) - (xnew[0] > half_box);
+        xnew[0] += _box[0] * outside;
     }
     static void f(double *const x, const double* _ibox,
                   const double* _box, const size_t natoms)
@@ -329,12 +305,8 @@ struct meta_image_soa<1> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * _box[0];
-        if (__builtin_expect(x[0] > half_box, 0)) {
-            x[0] -= _box[0];
-        }
-        if (__builtin_expect(x[0] < -half_box, 0)) {
-            x[0] += _box[0];
-        }
+        int outside = (x[0] < -half_box) - (x[0] > half_box);
+        x[0] += _box[0] * outside;
     }
 };
 
@@ -489,12 +461,8 @@ struct meta_leesedwards_image {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[k];
-        if (__builtin_expect(xnew[k] > half_box, 0)) {
-            xnew[k] -= box[k];
-        }
-        if (__builtin_expect(xnew[k] < -half_box, 0)) {
-            xnew[k] += box[k];
-        }
+        int outside = (xnew[k] < -half_box) - (xnew[k] > half_box);
+        xnew[k] += box[k] * outside;
 
         meta_leesedwards_image<k>::f(xnew, x, ibox, box, dx);
     }
@@ -506,12 +474,8 @@ struct meta_leesedwards_image {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[k];
-        if (__builtin_expect(x[k] > half_box, 0)) {
-            x[k] -= box[k];
-        }
-        if (__builtin_expect(x[k] < -half_box, 0)) {
-            x[k] += box[k];
-        }
+        int outside = (x[k] < -half_box) - (x[k] > half_box);
+        x[k] += box[k] * outside;
 
         meta_leesedwards_image<k>::f(x, ibox, box, dx);
     }
@@ -527,12 +491,8 @@ struct meta_leesedwards_image_soa {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[k];
-        if (__builtin_expect(xnew[k] > half_box, 0)) {
-            xnew[k] -= box[k];
-        }
-        if (__builtin_expect(xnew[k] < -half_box, 0)) {
-            xnew[k] += box[k];
-        }
+        int outside = (xnew[k] < -half_box) - (xnew[k] > half_box);
+        xnew[k] += box[k] * outside;
 
         meta_leesedwards_image_soa<k>::f(xnew, x, ibox, box, dx, natoms);
     }
@@ -545,12 +505,8 @@ struct meta_leesedwards_image_soa {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[k];
-        if (__builtin_expect(x[i] > half_box, 0)) {
-            x[i] -= box[k];
-        }
-        if (__builtin_expect(x[i] < -half_box, 0)) {
-            x[i] += box[k];
-        }
+        int outside = (x[i] < -half_box) - (x[i] > half_box);
+        x[i] += box[k] * outside;
 
         meta_leesedwards_image_soa<k>::f(x, ibox, box, dx, natoms);
     }
@@ -568,26 +524,17 @@ struct meta_leesedwards_image<2> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[1];
-        if (__builtin_expect(xnew[1] > half_box, 0)) {
-            xnew[0] -= dx;
-            xnew[1] -= box[1];
-        }
-        if (__builtin_expect(xnew[1] < -half_box, 0)) {
-            xnew[0] += dx;
-            xnew[1] += box[1];
-        }
+        int outside = (xnew[1] < -half_box) - (xnew[1] > half_box);
+        xnew[0] += dx * outside;
+        xnew[1] += box[1] * outside;
 
         // Apply periodic boundary conditions in x-direction
         xnew[0] -= round_fast(x[0] * ibox[0]) * box[0];
 
         // Correction for values close to the box boundary
         half_box = 0.5 * box[0];
-        if (__builtin_expect(xnew[0] > half_box, 0)) {
-            xnew[0] -= box[0];
-        }
-        if (__builtin_expect(xnew[0] < -half_box, 0)) {
-            xnew[0] += box[0];
-        }
+        outside = (xnew[0] < -half_box) - (xnew[0] > half_box);
+        xnew[0] += box[0] * outside;
     }
     static void f(double *const x, const double* ibox, const double* box,
                   const double dx)
@@ -599,26 +546,17 @@ struct meta_leesedwards_image<2> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[1];
-        if (__builtin_expect(x[1] > half_box, 0)) {
-            x[0] -= dx;
-            x[1] -= box[1];
-        }
-        if (__builtin_expect(x[1] < -half_box, 0)) {
-            x[0] += dx;
-            x[1] += box[1];
-        }
+        int outside = (x[1] < -half_box) - (x[1] > half_box);
+        x[0] += dx * outside;
+        x[1] += box[1] * outside;
 
         // Apply periodic boundary conditions in x-direction
         x[0] -= round_fast(x[0] * ibox[0]) * box[0];
 
         // Correction for values close to the box boundary
         half_box = 0.5 * box[0];
-        if (__builtin_expect(x[0] > half_box, 0)) {
-            x[0] -= box[0];
-        }
-        if (__builtin_expect(x[0] < -half_box, 0)) {
-            x[0] += box[0];
-        }
+        outside = (x[0] < -half_box) - (x[0] > half_box);
+        x[0] += box[0] * outside;
     }
 };
 template<>
@@ -633,26 +571,17 @@ struct meta_leesedwards_image_soa<2> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[1];
-        if (__builtin_expect(xnew[1] > half_box, 0)) {
-            xnew[0] -= dx;
-            xnew[1] -= box[1];
-        }
-        if (__builtin_expect(xnew[1] < -half_box, 0)) {
-            xnew[0] += dx;
-            xnew[1] += box[1];
-        }
+        int outside = (xnew[1] < -half_box) - (xnew[1] > half_box);
+        xnew[0] += dx * outside;
+        xnew[1] += box[1] * outside;
 
         // Apply periodic boundary conditions in x-direction
         xnew[0] -= round_fast(x[0] * ibox[0]) * box[0];
 
         // Correction for values close to the box boundary
         half_box = 0.5 * box[0];
-        if (__builtin_expect(xnew[0] > half_box, 0)) {
-            xnew[0] -= box[0];
-        }
-        if (__builtin_expect(xnew[0] < -half_box, 0)) {
-            xnew[0] += box[0];
-        }
+        outside = (xnew[0] < -half_box) - (xnew[0] > half_box);
+        xnew[0] += box[0] * outside;
     }
     static void f(double *const x, const double* ibox, const double* box,
                   const double dx, const size_t natoms)
@@ -664,26 +593,17 @@ struct meta_leesedwards_image_soa<2> {
 
         // Correction for values close to the box boundary
         double half_box = 0.5 * box[1];
-        if (__builtin_expect(x[natoms] > half_box, 0)) {
-            x[0] -= dx;
-            x[natoms] -= box[1];
-        }
-        if (__builtin_expect(x[natoms] < -half_box, 0)) {
-            x[0] += dx;
-            x[natoms] += box[1];
-        }
+        int outside = (x[natoms] < -half_box) - (x[natoms] > half_box);
+        x[0] += dx * outside;
+        x[natoms] += box[1] * outside;
 
         // Apply periodic boundary conditions in x-direction
         x[0] -= round_fast(x[0] * ibox[0]) * box[0];
 
         // Correction for values close to the box boundary
         half_box = 0.5 * box[0];
-        if (__builtin_expect(x[0] > half_box, 0)) {
-            x[0] -= box[0];
-        }
-        if (__builtin_expect(x[0] < -half_box, 0)) {
-            x[0] += box[0];
-        }
+        outside = (x[0] < -half_box) - (x[0] > half_box);
+        x[0] += box[0] * outside;
     }
 };
 
