@@ -102,6 +102,7 @@ public:
         double max_x = 0;
         if (m_soa)
         {
+            __assume_aligned(x.data(), 32);
             #pragma simd reduction(max : max_x)
             for (size_t atom_i = 0;  atom_i < natoms; ++atom_i) {
                 double atom_x = 0;
@@ -143,19 +144,72 @@ SimplePairwisePotential<pairwise_interaction, distance_policy>::add_energy_gradi
 
     double e = 0.;
     double gij;
-    double dr[m_ndim];
+    alignas(32) std::array<double, 4*m_ndim> dr;
+    alignas(32) double r2[4];
 
-//    grad.assign(0.);
+    if (m_soa) {
+        __assume_aligned(x.data(), 32);
+    }
 
     for (size_t atom_i=0; atom_i<natoms; ++atom_i) {
-        for (size_t atom_j=0; atom_j<atom_i; ++atom_j) {
+        size_t atom_i_rounded = atom_i * 0.25;
+        atom_i_rounded *= 4;
+        for (size_t atom_j_block=0; atom_j_block<atom_i_rounded; atom_j_block += 4) {
             if (m_soa) {
-                _dist->get_rij_soa(dr, &x[atom_i], &x[atom_j], natoms);
+                #pragma simd vectorlength(4)
+                for (size_t atom_j=0; atom_j < 4; ++atom_j) {
+                    _dist->get_rij_soa_to_soa(dr.data() + atom_j, x.data() + atom_i, x.data() + atom_j_block + atom_j, natoms);
+
+                    r2[atom_j] = 0;
+                    #pragma unroll
+                    for (size_t k=0; k<m_ndim; ++k) {
+                        r2[atom_j] += dr[atom_j+k*4]*dr[atom_j+k*4];
+                    }
+                }
+                for (size_t atom_j=0; atom_j < 4; ++atom_j) {
+                    size_t atom_j_tot = atom_j_block + atom_j;
+                    e += _interaction->energy_gradient(r2[atom_j], &gij, sum_radii(atom_i, atom_j_tot));
+                    if (gij != 0) {
+                        #pragma unroll
+                        for (size_t k=0; k<m_ndim; ++k) {
+                            dr[atom_j+k*4] *= gij;
+                            const size_t k1 = k * natoms;
+                            grad[atom_i + k1] -= dr[atom_j+k*4];
+                            grad[atom_j_tot + k1] += dr[atom_j+k*4];
+                        }
+                    }
+                }
             } else {
-                _dist->get_rij(dr, &x[atom_i*m_ndim], &x[atom_j*m_ndim]);
+                for (size_t atom_j=atom_j_block; atom_j < atom_j_block + 4; ++atom_j) {
+                    double r2 = 0;
+                    _dist->get_rij(dr.data(), &x[atom_i*m_ndim], &x[atom_j*m_ndim]);
+
+                    #pragma unroll
+                    for (size_t k=0; k<m_ndim; ++k) {
+                        r2 += dr[k]*dr[k];
+                    }
+
+                    e += _interaction->energy_gradient(r2, &gij, sum_radii(atom_i, atom_j));
+                    if (gij != 0) {
+                        #pragma unroll
+                        for (size_t k=0; k<m_ndim; ++k) {
+                            dr[k] *= gij;
+                            grad[atom_i*m_ndim + k] -= dr[k];
+                            grad[atom_j*m_ndim + k] += dr[k];
+                        }
+                    }
+                }
+            }
+        }
+        for (size_t atom_j=atom_i_rounded; atom_j<atom_i; ++atom_j) {
+            if (m_soa) {
+                _dist->get_rij_soa(dr.data(), &x[atom_i], &x[atom_j], natoms);
+            } else {
+                _dist->get_rij(dr.data(), &x[atom_i*m_ndim], &x[atom_j*m_ndim]);
             }
 
             double r2 = 0;
+            #pragma unroll
             for (size_t k=0; k<m_ndim; ++k) {
                 r2 += dr[k]*dr[k];
             }

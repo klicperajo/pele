@@ -76,6 +76,19 @@ struct meta_dist_soa {
         r_ij[k] = r1[i] - r2[i];
         meta_dist_soa<k>::f(r_ij, r1, r2, natoms);
     }
+    static void f_soa(double * const r_ij, double const * const r1,
+                      double const * const r2, const size_t natoms)
+    {
+        __assume_aligned(r_ij, 32);
+        __assume_aligned(r1, 32);
+        __assume_aligned(r2, 32);
+        __assume(natoms%4==0);
+
+        const static size_t k = IDX - 1;
+        const size_t i = natoms * k;
+        r_ij[k*4] = r1[i] - r2[i];
+        meta_dist_soa<k>::f_soa(r_ij, r1, r2, natoms);
+    }
 };
 
 template<>
@@ -91,6 +104,16 @@ struct meta_dist_soa<1> {
     static void f(double * const r_ij, double const * const r1,
                   double const * const r2, const size_t natoms)
     {
+        r_ij[0] = r1[0] - r2[0];
+    }
+    static void f_soa(double * const r_ij, double const * const r1,
+                      double const * const r2, const size_t natoms)
+    {
+        __assume_aligned(r_ij, 32);
+        __assume_aligned(r1, 32);
+        __assume_aligned(r2, 32);
+        __assume(natoms%4==0);
+
         r_ij[0] = r1[0] - r2[0];
     }
 };
@@ -111,6 +134,12 @@ public:
     {
         static_assert(ndim > 0, "illegal box dimension");
         meta_dist_soa<ndim>::f(r_ij, r1, r2, natoms);
+    }
+    inline void get_rij_soa_to_soa(double * const r_ij, double const * const r1,
+                                   double const * const r2, const size_t natoms) const
+    {
+        static_assert(ndim > 0, "illegal box dimension");
+        meta_dist_soa<ndim>::f_soa(r_ij, r1, r2, natoms);
     }
 
 
@@ -164,6 +193,21 @@ struct  meta_periodic_distance_soa {
         r_ij[k] -= round_fast(r_ij[k] * _ibox[k]) * _box[k];
         meta_periodic_distance_soa<k>::f(r_ij, r1, r2, _box, _ibox, natoms);
     }
+    static void f_soa(double * const r_ij, double const * const r1,
+                      double const * const r2, const double* _box, const double* _ibox,
+                      const size_t natoms)
+    {
+        __assume_aligned(r_ij, 32);
+        __assume_aligned(r1, 32);
+        __assume_aligned(r2, 32);
+        __assume(natoms%4==0);
+
+        const static size_t k = IDX - 1;
+        const size_t i = natoms * k;
+        r_ij[4*k] = r1[i] - r2[i];
+        r_ij[4*k] -= round_fast(r_ij[4*k] * _ibox[k]) * _box[k];
+        meta_periodic_distance_soa<k>::f_soa(r_ij, r1, r2, _box, _ibox, natoms);
+    }
 };
 
 template<>
@@ -181,6 +225,18 @@ struct meta_periodic_distance_soa<1> {
                   double const * const r2, const double* _box, const double* _ibox,
                   const size_t natoms)
     {
+        r_ij[0] = r1[0] - r2[0];
+        r_ij[0] -= round_fast(r_ij[0] * _ibox[0]) * _box[0];
+    }
+    static void f_soa(double * const r_ij, double const * const r1,
+                      double const * const r2, const double* _box, const double* _ibox,
+                      const size_t natoms)
+    {
+        __assume_aligned(r_ij, 32);
+        __assume_aligned(r1, 32);
+        __assume_aligned(r2, 32);
+        __assume(natoms%4==0);
+
         r_ij[0] = r1[0] - r2[0];
         r_ij[0] -= round_fast(r_ij[0] * _ibox[0]) * _box[0];
     }
@@ -345,6 +401,11 @@ public:
     {
         meta_periodic_distance_soa<ndim>::f(r_ij, r1, r2, _box, _ibox, natoms);
     }
+    inline void get_rij_soa_to_soa(double * const r_ij, double const * const r1,
+                                   double const * const r2, const size_t natoms) const
+    {
+        meta_periodic_distance_soa<ndim>::f_soa(r_ij, r1, r2, _box, _ibox, natoms);
+    }
 
     inline void put_atom_in_box(double * const xnew, const double* x) const
     {
@@ -406,6 +467,21 @@ struct  meta_leesedwards_distance_soa {
         r_ij[k] -= round_fast(r_ij[k] * ibox[k]) * box[k];
         meta_leesedwards_distance_soa<k>::f(r_ij, r1, r2, box, ibox, dx, natoms);
     }
+    static void f_soa(double * const r_ij, double const * const r1,
+                      double const * const r2, const double* box, const double* ibox,
+                      const double dx, const size_t natoms)
+    {
+        __assume_aligned(r_ij, 32);
+        __assume_aligned(r1, 32);
+        __assume_aligned(r2, 32);
+        __assume(natoms%4==0);
+
+        const static size_t k = IDX - 1;
+        const size_t i = k * natoms;
+        r_ij[k*4] = r1[i] - r2[i];
+        r_ij[k*4] -= round_fast(r_ij[k*4] * ibox[k]) * box[k];
+        meta_leesedwards_distance_soa<k>::f_soa(r_ij, r1, r2, box, ibox, dx, natoms);
+    }
 };
 
 template<>
@@ -441,6 +517,27 @@ struct meta_leesedwards_distance_soa<2> {
         double round_y = round_fast(r_ij[1] * ibox[1]);
         r_ij[0] = r_ij[0] - round_y * dx;
         r_ij[1] = r_ij[1] - round_y * box[1];
+
+        // Apply periodic boundary conditions in x-direction
+        r_ij[0] -= round_fast(r_ij[0] * ibox[0]) * box[0];
+    }
+    static void f_soa(double * const r_ij, double const * const r1,
+                      double const * const r2, const double* box, const double* ibox,
+                      const double dx, const size_t natoms)
+    {
+        __assume_aligned(r_ij, 32);
+        __assume_aligned(r1, 32);
+        __assume_aligned(r2, 32);
+        __assume(natoms%4==0);
+
+        // Calculate difference
+        r_ij[0] = r1[0] - r2[0];
+        r_ij[4] = r1[natoms] - r2[natoms];
+
+        // Apply Lees-Edwards boundary conditions in y-direction
+        double round_y = round_fast(r_ij[4] * ibox[1]);
+        r_ij[0] = r_ij[0] - round_y * dx;
+        r_ij[4] = r_ij[4] - round_y * box[1];
 
         // Apply periodic boundary conditions in x-direction
         r_ij[0] -= round_fast(r_ij[0] * ibox[0]) * box[0];
@@ -648,6 +745,11 @@ public:
                             double const * const r2, const size_t natoms) const
     {
         meta_leesedwards_distance_soa<ndim>::f(r_ij, r1, r2, m_box, m_ibox, m_dx, natoms);
+    }
+    inline void get_rij_soa_to_soa(double * const r_ij, double const * const r1,
+                                   double const * const r2, const size_t natoms) const
+    {
+        meta_leesedwards_distance_soa<ndim>::f_soa(r_ij, r1, r2, m_box, m_ibox, m_dx, natoms);
     }
 
     inline void put_atom_in_box(double * const xnew, const double* x) const
